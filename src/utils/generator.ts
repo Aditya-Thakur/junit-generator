@@ -43,9 +43,24 @@ function findBeansDir(baseDir: string): string | null {
     return null;
 }
 
-// Read all POJO files from the 'beans' directory
+// Recursively read all POJO files from the 'beans' directory and its subdirectories
 function getPojoFiles(dir: string): string[] {
-    return fs.readdirSync(dir).filter(file => file.endsWith('.java'));
+    let pojoFiles: string[] = [];
+
+    function readDirRecursively(currentDir: string) {
+        const files = fs.readdirSync(currentDir);
+        for (const file of files) {
+            const fullPath = path.join(currentDir, file);
+            if (fs.statSync(fullPath).isDirectory()) {
+                readDirRecursively(fullPath);
+            } else if (file.endsWith('.java')) {
+                pojoFiles.push(fullPath);
+            }
+        }
+    }
+
+    readDirRecursively(dir);
+    return pojoFiles;
 }
 
 // Parse a POJO file to extract package name, class name, and fields
@@ -133,25 +148,24 @@ function generateTests(baseDirPath: string): Report {
         generatedFileDetails: []
     };
 
-    const testDir = beansDir.replace(path.join('src', 'main'), path.join('src', 'test'));
-
-    pojoFiles.forEach(file => {
-        const filePath = path.join(beansDir, file);
+    pojoFiles.forEach(filePath => {
         const pojo = parsePojoFile(filePath);
 
         if (pojo.fields.some(field => field.type !== 'String')) {
-            report.skippedFiles.push(file);
+            report.skippedFiles.push(filePath);
             return;
         }
 
         const testContent = generateTestContent(pojo);
-        const testFilePath = path.join(testDir, `${pojo.className}Test.java`);
+        const testFilePath = filePath
+            .replace(path.join('src', 'main'), path.join('src', 'test'))
+            .replace(/\.java$/, 'Test.java');
 
         fs.mkdirSync(path.dirname(testFilePath), { recursive: true });
         fs.writeFileSync(testFilePath, testContent, 'utf-8');
 
         report.generatedFiles++;
-        report.generatedFileDetails.push({ name: `${pojo.className}Test.java`, path: testFilePath });
+        report.generatedFileDetails.push({ name: path.basename(testFilePath), path: testFilePath });
     });
 
     return report;
