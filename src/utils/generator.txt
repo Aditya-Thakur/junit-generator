@@ -1,0 +1,168 @@
+import * as fs from 'fs';
+import * as path from 'path';
+
+interface Field {
+    name: string;
+    type: string;
+}
+
+interface PojoClass {
+    packageName: string;
+    className: string;
+    fields: Field[];
+}
+
+interface Report {
+    totalFiles: number;
+    generatedFiles: number;
+    skippedFiles: string[];
+    generatedFileDetails: { name: string, path: string }[];
+}
+
+// Recursively find the 'beans' directory starting from 'src/main/java'
+function findBeansDir(baseDir: string): string | null {
+    const srcMainJavaPath = path.join(baseDir, 'src', 'main', 'java');
+    const stack = [srcMainJavaPath];
+
+    while (stack.length) {
+        const currentDir = stack.pop();
+        if (!currentDir) continue;
+
+        const files = fs.readdirSync(currentDir);
+        for (const file of files) {
+            const fullPath = path.join(currentDir, file);
+            if (fs.statSync(fullPath).isDirectory()) {
+                if (file === 'beans') {
+                    return fullPath;
+                }
+                stack.push(fullPath);
+            }
+        }
+    }
+
+    return null;
+}
+
+// Read all POJO files from the 'beans' directory
+function getPojoFiles(dir: string): string[] {
+    return fs.readdirSync(dir).filter(file => file.endsWith('.java'));
+}
+
+// Parse a POJO file to extract package name, class name, and fields
+function parsePojoFile(filePath: string): PojoClass {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const packageNameMatch = content.match(/package\s+([a-zA-Z0-9_.]+);/);
+    const classNameMatch = content.match(/public\s+class\s+([a-zA-Z0-9_]+)/);
+    const fieldMatches = [...content.matchAll(/private\s+([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+);/g)];
+
+    if (!packageNameMatch || !classNameMatch) {
+        throw new Error('Invalid POJO file: ' + filePath);
+    }
+
+    const packageName = packageNameMatch[1];
+    const className = classNameMatch[1];
+    const fields: Field[] = fieldMatches.map(match => ({
+        type: match[1],
+        name: match[2]
+    }));
+
+    return { packageName, className, fields };
+}
+
+// Generate JUnit test content for a POJO class
+function generateTestContent(pojo: PojoClass): string {
+    const imports = [
+        'import org.junit.jupiter.api.BeforeEach;',
+        'import org.junit.jupiter.api.Test;',
+        'import org.mockito.InjectMocks;',
+        'import static org.assertj.core.api.Assertions.assertThat;',
+    ];
+
+    const setupMethod = `
+  @BeforeEach
+  public void setup() {
+    ${pojo.className.toLowerCase()} = new ${pojo.className}();
+  }
+  `;
+
+    const testMethods = pojo.fields.map(field => {
+        const fieldName = field.name;
+        const fieldValue = field.type === 'String' ? `"${fieldName}"` : '1';
+        return `
+    @Test
+    void set${capitalize(fieldName)}Test() {
+      ${pojo.className.toLowerCase()}.set${capitalize(fieldName)}(${fieldValue});
+      assertThat(${pojo.className.toLowerCase()}.get${capitalize(fieldName)}()).isNotNull();
+    }
+    `;
+    }).join('\n');
+
+    return `
+  package ${pojo.packageName};
+
+  ${imports.join('\n')}
+
+  public class ${pojo.className}Test {
+    @InjectMocks
+    private ${pojo.className} ${pojo.className.toLowerCase()};
+
+    ${setupMethod}
+
+    ${testMethods}
+  }
+  `;
+}
+
+// Helper function to capitalize the first letter of a string
+function capitalize(str: string): string {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// Main function to generate JUnit test files
+function generateTests(baseDirPath: string): Report {
+    const beansDir = findBeansDir(baseDirPath);
+    if (!beansDir) {
+        throw new Error('Beans directory not found');
+    }
+
+    const pojoFiles = getPojoFiles(beansDir);
+    const report: Report = {
+        totalFiles: pojoFiles.length,
+        generatedFiles: 0,
+        skippedFiles: [],
+        generatedFileDetails: []
+    };
+
+    const testDir = beansDir.replace(path.join('src', 'main'), path.join('src', 'test'));
+
+    pojoFiles.forEach(file => {
+        const filePath = path.join(beansDir, file);
+        const pojo = parsePojoFile(filePath);
+
+        if (pojo.fields.some(field => field.type !== 'String')) {
+            report.skippedFiles.push(file);
+            return;
+        }
+
+        const testContent = generateTestContent(pojo);
+        const testFilePath = path.join(testDir, `${pojo.className}Test.java`);
+
+        fs.mkdirSync(path.dirname(testFilePath), { recursive: true });
+        fs.writeFileSync(testFilePath, testContent, 'utf-8');
+
+        report.generatedFiles++;
+        report.generatedFileDetails.push({ name: `${pojo.className}Test.java`, path: testFilePath });
+    });
+
+    return report;
+}
+
+// Run the script with a sample base directory path
+const report = generateTests('./path/to/your/project');
+
+console.log('Test File Generation Report:');
+console.log('Total Files:', report.totalFiles);
+console.log('Generated Files:', report.generatedFiles);
+console.log('Skipped Files:', report.skippedFiles);
+console.log('Generated File Details:', report.generatedFileDetails);
+console.log('Success Percentage:', (report.generatedFiles / report.totalFiles) * 100, '%');
