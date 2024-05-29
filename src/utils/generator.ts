@@ -4,6 +4,7 @@ import * as path from 'path';
 interface Field {
     name: string;
     type: string;
+    isList: boolean;
 }
 
 interface PojoClass {
@@ -69,7 +70,7 @@ function parsePojoFile(filePath: string): PojoClass {
     const content = fs.readFileSync(filePath, 'utf-8');
     const packageNameMatch = content.match(/package\s+([a-zA-Z0-9_.]+);/);
     const classNameMatch = content.match(/public\s+class\s+([a-zA-Z0-9_]+)/);
-    const fieldMatches = [...content.matchAll(/private\s+([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+);/g)];
+    const fieldMatches = [...content.matchAll(/private\s+([a-zA-Z0-9_<>]+)\s+([a-zA-Z0-9_]+);/g)];
     const constructorMatch = content.match(/public\s+[a-zA-Z0-9_]+\s*\(([^)]*)\)\s*{/);
 
     if (!packageNameMatch || !classNameMatch) {
@@ -79,8 +80,9 @@ function parsePojoFile(filePath: string): PojoClass {
     const packageName = packageNameMatch[1];
     const className = classNameMatch[1];
     const fields: Field[] = fieldMatches.map(match => ({
-        type: match[1],
-        name: match[2]
+        type: match[1].replace(/^List<|>$/g, ''),
+        name: match[2],
+        isList: match[1].startsWith('List<')
     }));
 
     const hasConstructor = !!constructorMatch;
@@ -89,13 +91,15 @@ function parsePojoFile(filePath: string): PojoClass {
 }
 
 // Generate JUnit test content for a POJO class
-function generateTestContent(pojo: PojoClass): string {
+function generateTestContent(pojo: PojoClass, allPojos: Map<string, PojoClass>): string {
     const imports = [
         'import org.junit.jupiter.api.BeforeEach;',
         'import org.junit.jupiter.api.Test;',
         'import org.mockito.InjectMocks;',
+        'import java.util.ArrayList;',
+        'import java.util.List;',
         'import static org.assertj.core.api.Assertions.assertThat;',
-        'import static org.junit.jupiter.api.Assertions.assertEquals;'
+        'import static org.junit.jupiter.api.Assertions.assertEquals;',
     ];
 
     const setupMethod = `
@@ -107,13 +111,14 @@ function generateTestContent(pojo: PojoClass): string {
 
     const testMethods = pojo.fields.map(field => {
         const fieldName = field.name;
-        const fieldValue = field.type === 'String' ? `"${fieldName}"` : '1';
+        const fieldValue = getDefaultValue(field.type, field.isList, allPojos);
+        const fieldAssert = getFieldAssert(pojo.className.toLowerCase(), field, fieldValue);
+
         return `
     @Test
     void set${capitalize(fieldName)}Test() {
       ${pojo.className.toLowerCase()}.set${capitalize(fieldName)}(${fieldValue});
-      assertThat(${pojo.className.toLowerCase()}.get${capitalize(fieldName)}()).isNotNull();
-      assertEquals(${fieldValue}, ${pojo.className.toLowerCase()}.get${capitalize(fieldName)}());
+      ${fieldAssert}
     }
     `;
     }).join('\n');
@@ -121,8 +126,8 @@ function generateTestContent(pojo: PojoClass): string {
     const constructorTestMethod = pojo.hasConstructor ? `
   @Test
   void constructorTest() {
-    ${pojo.className} ${pojo.className.toLowerCase()}1 = new ${pojo.className}(${pojo.fields.map(field => field.type === 'String' ? `"${field.name}"` : '1').join(', ')});
-    ${pojo.fields.map(field => `assertEquals("${field.name}", ${pojo.className.toLowerCase()}1.get${capitalize(field.name)}());`).join('\n    ')}
+    ${pojo.className} ${pojo.className.toLowerCase()}1 = new ${pojo.className}(${pojo.fields.map(field => getDefaultValue(field.type, field.isList, allPojos)).join(', ')});
+    ${pojo.fields.map(field => getConstructorAssert(pojo.className.toLowerCase() + '1', field)).join('\n    ')}
   }
   ` : '';
 
@@ -144,6 +149,64 @@ function generateTestContent(pojo: PojoClass): string {
   `;
 }
 
+// Helper function to get the default value for a field
+function getDefaultValue(type: string, isList: boolean, allPojos: Map<string, PojoClass>): string {
+    if (isList) {
+        const listElementType = type;
+        if (listElementType === 'String') {
+            return 'new ArrayList<>(List.of("element1", "element2"))';
+        } else if (listElementType === 'Integer') {
+            return 'new ArrayList<>(List.of(1, 2))';
+        } else if (allPojos.has(listElementType)) {
+            const elementValue = getDefaultValue(listElementType, false, allPojos);
+            return `new ArrayList<>(List.of(${elementValue}, ${elementValue}))`;
+        } else {
+            return 'new ArrayList<>()';
+        }
+    } else {
+        if (type === 'String') {
+            return `"${type.toLowerCase()}"`;
+        } else if (type === 'Integer') {
+            return '1';
+        } else if (allPojos.has(type)) {
+            const pojo = allPojos.get(type)!;
+            return `new ${type}(${pojo.fields.map(field => getDefaultValue(field.type, field.isList, allPojos)).join(', ')})`;
+        } else {
+            return 'null';
+        }
+    }
+}
+
+// Helper function to generate assertions for a field
+function getFieldAssert(instanceName: string, field: Field, fieldValue: string): string {
+    if (field.isList) {
+        return `
+    assertThat(${instanceName}.get${capitalize(field.name)}()).isNotNull();
+    assertThat(${instanceName}.get${capitalize(field.name)}().size()).isGreaterThan(0);
+    `;
+    } else {
+        return `
+    assertThat(${instanceName}.get${capitalize(field.name)}()).isNotNull();
+    assertEquals(${fieldValue}, ${instanceName}.get${capitalize(field.name)}());
+    `;
+    }
+}
+
+// Helper function to generate constructor assertions for a field
+function getConstructorAssert(instanceName: string, field: Field): string {
+    if (field.isList) {
+        return `
+    assertThat(${instanceName}.get${capitalize(field.name)}()).isNotNull();
+    assertThat(${instanceName}.get${capitalize(field.name)}().size()).isGreaterThan(0);
+    `;
+    } else {
+        return `
+    assertThat(${instanceName}.get${capitalize(field.name)}()).isNotNull();
+    assertEquals(${getDefaultValue(field.type, field.isList, new Map())}, ${instanceName}.get${capitalize(field.name)}());
+    `;
+    }
+}
+
 // Helper function to capitalize the first letter of a string
 function capitalize(str: string): string {
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -157,6 +220,13 @@ function generateTests(baseDirPath: string): Report {
     }
 
     const pojoFiles = getPojoFiles(beansDir);
+    const pojos: Map<string, PojoClass> = new Map();
+
+    pojoFiles.forEach(filePath => {
+        const pojo = parsePojoFile(filePath);
+        pojos.set(pojo.className, pojo);
+    });
+
     const report: Report = {
         totalFiles: pojoFiles.length,
         generatedFiles: 0,
@@ -167,12 +237,7 @@ function generateTests(baseDirPath: string): Report {
     pojoFiles.forEach(filePath => {
         const pojo = parsePojoFile(filePath);
 
-        if (pojo.fields.some(field => field.type !== 'String')) {
-            report.skippedFiles.push(filePath);
-            return;
-        }
-
-        const testContent = generateTestContent(pojo);
+        const testContent = generateTestContent(pojo, pojos);
         const testFilePath = filePath
             .replace(path.join('src', 'main'), path.join('src', 'test'))
             .replace(/\.java$/, 'Test.java');
