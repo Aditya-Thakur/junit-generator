@@ -10,6 +10,7 @@ interface PojoClass {
     packageName: string;
     className: string;
     fields: Field[];
+    hasConstructor: boolean;
 }
 
 interface Report {
@@ -63,12 +64,13 @@ function getPojoFiles(dir: string): string[] {
     return pojoFiles;
 }
 
-// Parse a POJO file to extract package name, class name, and fields
+// Parse a POJO file to extract package name, class name, fields, and constructor
 function parsePojoFile(filePath: string): PojoClass {
     const content = fs.readFileSync(filePath, 'utf-8');
     const packageNameMatch = content.match(/package\s+([a-zA-Z0-9_.]+);/);
     const classNameMatch = content.match(/public\s+class\s+([a-zA-Z0-9_]+)/);
     const fieldMatches = [...content.matchAll(/private\s+([a-zA-Z0-9_]+)\s+([a-zA-Z0-9_]+);/g)];
+    const constructorMatch = content.match(/public\s+[a-zA-Z0-9_]+\s*\(([^)]*)\)\s*{/);
 
     if (!packageNameMatch || !classNameMatch) {
         throw new Error('Invalid POJO file: ' + filePath);
@@ -81,7 +83,9 @@ function parsePojoFile(filePath: string): PojoClass {
         name: match[2]
     }));
 
-    return { packageName, className, fields };
+    const hasConstructor = !!constructorMatch;
+
+    return { packageName, className, fields, hasConstructor };
 }
 
 // Generate JUnit test content for a POJO class
@@ -91,6 +95,7 @@ function generateTestContent(pojo: PojoClass): string {
         'import org.junit.jupiter.api.Test;',
         'import org.mockito.InjectMocks;',
         'import static org.assertj.core.api.Assertions.assertThat;',
+        'import static org.junit.jupiter.api.Assertions.assertEquals;'
     ];
 
     const setupMethod = `
@@ -108,9 +113,18 @@ function generateTestContent(pojo: PojoClass): string {
     void set${capitalize(fieldName)}Test() {
       ${pojo.className.toLowerCase()}.set${capitalize(fieldName)}(${fieldValue});
       assertThat(${pojo.className.toLowerCase()}.get${capitalize(fieldName)}()).isNotNull();
+      assertEquals(${fieldValue}, ${pojo.className.toLowerCase()}.get${capitalize(fieldName)}());
     }
     `;
     }).join('\n');
+
+    const constructorTestMethod = pojo.hasConstructor ? `
+  @Test
+  void constructorTest() {
+    ${pojo.className} ${pojo.className.toLowerCase()}1 = new ${pojo.className}(${pojo.fields.map(field => field.type === 'String' ? `"${field.name}"` : '1').join(', ')});
+    ${pojo.fields.map(field => `assertEquals("${field.name}", ${pojo.className.toLowerCase()}1.get${capitalize(field.name)}());`).join('\n    ')}
+  }
+  ` : '';
 
     return `
   package ${pojo.packageName};
@@ -124,6 +138,8 @@ function generateTestContent(pojo: PojoClass): string {
     ${setupMethod}
 
     ${testMethods}
+
+    ${constructorTestMethod}
   }
   `;
 }
