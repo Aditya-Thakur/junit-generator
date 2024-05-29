@@ -92,7 +92,7 @@ function parsePojoFile(filePath: string): PojoClass {
 
 // Generate JUnit test content for a POJO class
 function generateTestContent(pojo: PojoClass, allPojos: Map<string, PojoClass>): string {
-    const imports = [
+    const imports = new Set<string>([
         'import org.junit.jupiter.api.BeforeEach;',
         'import org.junit.jupiter.api.Test;',
         'import org.mockito.InjectMocks;',
@@ -100,7 +100,17 @@ function generateTestContent(pojo: PojoClass, allPojos: Map<string, PojoClass>):
         'import java.util.List;',
         'import static org.assertj.core.api.Assertions.assertThat;',
         'import static org.junit.jupiter.api.Assertions.assertEquals;',
-    ];
+    ]);
+
+    // Collect all necessary imports for referenced POJOs
+    pojo.fields.forEach(field => {
+        if (allPojos.has(field.type)) {
+            const fieldPojo = allPojos.get(field.type);
+            if (fieldPojo) {
+                imports.add(`import ${fieldPojo.packageName}.${fieldPojo.className};`);
+            }
+        }
+    });
 
     const setupMethod = `
   @BeforeEach
@@ -134,7 +144,7 @@ function generateTestContent(pojo: PojoClass, allPojos: Map<string, PojoClass>):
     return `
   package ${pojo.packageName};
 
-  ${imports.join('\n')}
+  ${[...imports].join('\n')}
 
   public class ${pojo.className}Test {
     @InjectMocks
@@ -170,7 +180,8 @@ function getDefaultValue(type: string, isList: boolean, allPojos: Map<string, Po
             return '1';
         } else if (allPojos.has(type)) {
             const pojo = allPojos.get(type)!;
-            return `new ${type}(${pojo.fields.map(field => getDefaultValue(field.type, field.isList, allPojos)).join(', ')})`;
+            const constructorArgs = pojo.fields.map(field => getDefaultValue(field.type, field.isList, allPojos));
+            return `new ${type}(${constructorArgs.join(', ')})`;
         } else {
             return 'null';
         }
