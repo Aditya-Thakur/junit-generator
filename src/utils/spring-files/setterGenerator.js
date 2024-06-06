@@ -7,9 +7,9 @@ message ListadoRegulado {
 }
 `;
 
-// Function to convert snake_case to camelCase
+// Function to convert snake_case to camelCase, including numbers
 function toCamelCase(snakeCaseStr) {
-    return snakeCaseStr.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    return snakeCaseStr.replace(/_([a-zA-Z0-9])/g, (_, char) => char.toUpperCase());
 }
 
 // Function to generate Java builder function
