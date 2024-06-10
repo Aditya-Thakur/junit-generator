@@ -44,11 +44,24 @@ const generateJavaClass = (javaPackage: string, message: string, imports: string
         return `private ${convertProtoTypeToJava(fieldType)} ${fieldName};`;
     });
 
-    const importStatements = imports.map(imp => {
-        // Adjusting import paths to fit the Java structure
-        const importPath = imp.replace('.proto', '').replace(/\//g, '.');
-        return `import ${javaPackage}.${importPath};`;
+    const repeatedFields = [...message.matchAll(/\s*repeated\s+(\w+)\s+(\w+)\s*=\s*\d+;/g)].map(match => {
+        const fieldType = match[1];
+        const fieldName = match[2];
+        return `private List<${convertProtoTypeToJava(fieldType)}> ${fieldName};`;
     });
+
+    const allFields = [...fields, ...repeatedFields];
+
+    const importStatements = [
+        ...new Set(
+            imports.map(imp => {
+                // Adjusting import paths to fit the Java structure
+                const importPath = imp.replace('.proto', '').replace(/\//g, '.');
+                return `import ${javaPackage}.${importPath};`;
+            })
+        ),
+        ...((repeatedFields.length > 0) ? ['import java.util.List;'] : []) // Add List import if there are repeated fields
+    ];
 
     return `
 package ${javaPackage};
@@ -60,7 +73,6 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import java.util.List;
 
 @Getter
 @Setter
@@ -69,7 +81,7 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ${className} {
-    ${fields.join('\n    ')}
+    ${allFields.join('\n    ')}
 }
 `;
 };
@@ -85,7 +97,7 @@ const convertProtoTypeToJava = (protoType: string): string => {
         'float': 'float'
         // Add more mappings as needed
     };
-    return typeMapping[protoType] || protoType;
+    return typeMapping[protoType] || capitalizeFirstLetter(protoType);
 };
 
 // Main function to process proto files
