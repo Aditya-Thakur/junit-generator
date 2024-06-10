@@ -1,14 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Helper function to get all .proto files recursively
-const getProtoFiles = (dir: string, fileList: string[] = []): string[] => {
+// Helper function to get all .proto files recursively with their relative paths
+const getProtoFilesWithRelativePaths = (dir: string, rootDir: string, fileList: { filePath: string, relativePath: string }[] = []): { filePath: string, relativePath: string }[] => {
     fs.readdirSync(dir).forEach(file => {
         const filePath = path.join(dir, file);
         if (fs.statSync(filePath).isDirectory()) {
-            getProtoFiles(filePath, fileList);
+            getProtoFilesWithRelativePaths(filePath, rootDir, fileList);
         } else if (filePath.endsWith('.proto')) {
-            fileList.push(filePath);
+            const relativePath = path.relative(rootDir, filePath);
+            fileList.push({ filePath, relativePath });
         }
     });
     return fileList;
@@ -19,7 +20,8 @@ const parseProtoFile = (filePath: string) => {
     const content = fs.readFileSync(filePath, 'utf-8');
     const packageMatch = content.match(/package\s+([\w.]+);/);
     const javaPackageMatch = content.match(/option\s+java_package\s*=\s*"([\w.]+)";/);
-    const messageMatch = content.match(/message\s+(\w+)\s*{[^}]*}/g);
+    // Capture both regular and repeated fields
+    const messageMatch = content.match(/message\s+\w+\s*{[^}]*}/g);
     const importMatches = [...content.matchAll(/import\s+"([\w/.]+)";/g)];
 
     const packageName = packageMatch ? packageMatch[1] : '';
@@ -38,19 +40,21 @@ const capitalizeFirstLetter = (str: string): string => {
 // Function to convert proto message to Java bean class
 const generateJavaClass = (javaPackage: string, message: string, imports: string[], packageName: string): string => {
     const className = capitalizeFirstLetter(message.match(/message\s+(\w+)/)?.[1] || 'Unknown');
-    const fields = [...message.matchAll(/\s*(\w+)\s+(\w+)\s*=\s*\d+;/g)].map(match => {
-        const fieldType = match[1];
-        const fieldName = match[2];
-        return `private ${convertProtoTypeToJava(fieldType)} ${fieldName};`;
-    });
 
-    const repeatedFields = [...message.matchAll(/\s*repeated\s+(\w+)\s+(\w+)\s*=\s*\d+;/g)].map(match => {
-        const fieldType = match[1];
-        const fieldName = match[2];
-        return `private List<${convertProtoTypeToJava(fieldType)}> ${fieldName};`;
-    });
+    // Match both regular and repeated fields
+    const fieldMatches = [...message.matchAll(/(repeated\s+)?(\w+)\s+(\w+)\s*=\s*\d+;/g)];
 
-    const allFields = [...fields, ...repeatedFields];
+    const fields = fieldMatches.map(match => {
+        const isRepeated = match[1] !== undefined;
+        const fieldType = match[2];
+        const fieldName = match[3];
+
+        if (isRepeated) {
+            return `private List<${convertProtoTypeToJava(fieldType)}> ${fieldName};`;
+        } else {
+            return `private ${convertProtoTypeToJava(fieldType)} ${fieldName};`;
+        }
+    });
 
     const importStatements = [
         ...new Set(
@@ -60,7 +64,7 @@ const generateJavaClass = (javaPackage: string, message: string, imports: string
                 return `import ${javaPackage}.${importPath};`;
             })
         ),
-        ...((repeatedFields.length > 0) ? ['import java.util.List;'] : []) // Add List import if there are repeated fields
+        ...((fields.some(f => f.includes('List<'))) ? ['import java.util.List;'] : []) // Add List import if there are repeated fields
     ];
 
     return `
@@ -81,7 +85,7 @@ import lombok.Setter;
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ${className} {
-    ${allFields.join('\n    ')}
+    ${fields.join('\n    ')}
 }
 `;
 };
@@ -102,18 +106,18 @@ const convertProtoTypeToJava = (protoType: string): string => {
 
 // Main function to process proto files
 const processProtoFiles = (srcDir: string, distDir: string) => {
-    const protoFiles = getProtoFiles(srcDir);
+    const protoFiles = getProtoFilesWithRelativePaths(srcDir, srcDir);
 
     protoFiles.forEach(protoFile => {
-        const { packageName, javaPackageName, messages, imports } = parseProtoFile(protoFile);
+        const { filePath, relativePath } = protoFile;
+        const { packageName, javaPackageName, messages, imports } = parseProtoFile(filePath);
 
         messages.forEach(message => {
             const className = capitalizeFirstLetter(message.match(/message\s+(\w+)/)?.[1] || 'Unknown');
             const javaClass = generateJavaClass(javaPackageName, message, imports, packageName);
 
             // Define the output path and ensure directory exists
-            const relativePath = path.relative(srcDir, protoFile);
-            const outputFilePath = path.join(distDir, relativePath.replace('.proto', `.java`));
+            const outputFilePath = path.join(distDir, relativePath.replace('.proto', '.java'));
             const outputDir = path.dirname(outputFilePath);
             const capitalizedFilePath = path.join(outputDir, `${className}.java`);
             fs.mkdirSync(outputDir, { recursive: true });
