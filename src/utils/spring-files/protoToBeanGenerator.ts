@@ -30,9 +30,14 @@ const parseProtoFile = (filePath: string) => {
     return { packageName, javaPackageName, messages, imports };
 };
 
+// Function to convert the first letter of a string to uppercase
+const capitalizeFirstLetter = (str: string): string => {
+    return str.charAt(0).toUpperCase() + str.slice(1);
+};
+
 // Function to convert proto message to Java bean class
 const generateJavaClass = (javaPackage: string, message: string, imports: string[], packageName: string): string => {
-    const className = message.match(/message\s+(\w+)/)?.[1] || 'Unknown';
+    const className = capitalizeFirstLetter(message.match(/message\s+(\w+)/)?.[1] || 'Unknown');
     const fields = [...message.matchAll(/\s*(\w+)\s+(\w+)\s*=\s*\d+;/g)].map(match => {
         const fieldType = match[1];
         const fieldName = match[2];
@@ -91,16 +96,18 @@ const processProtoFiles = (srcDir: string, distDir: string) => {
         const { packageName, javaPackageName, messages, imports } = parseProtoFile(protoFile);
 
         messages.forEach(message => {
+            const className = capitalizeFirstLetter(message.match(/message\s+(\w+)/)?.[1] || 'Unknown');
             const javaClass = generateJavaClass(javaPackageName, message, imports, packageName);
 
             // Define the output path and ensure directory exists
             const relativePath = path.relative(srcDir, protoFile);
-            const outputFilePath = path.join(distDir, relativePath.replace('.proto', '.java'));
+            const outputFilePath = path.join(distDir, relativePath.replace('.proto', `.java`));
             const outputDir = path.dirname(outputFilePath);
+            const capitalizedFilePath = path.join(outputDir, `${className}.java`);
             fs.mkdirSync(outputDir, { recursive: true });
 
             // Write the Java class to the output file
-            fs.writeFileSync(outputFilePath, javaClass, 'utf-8');
+            fs.writeFileSync(capitalizedFilePath, javaClass, 'utf-8');
         });
     });
 };
