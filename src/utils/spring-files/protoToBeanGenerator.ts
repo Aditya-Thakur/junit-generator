@@ -39,19 +39,22 @@ const capitalizeFirstLetter = (str: string): string => {
 // Function to convert proto message to Java bean class
 const generateJavaClass = (javaPackage: string, message: string, imports: string[], packageName: string): string => {
     const className = capitalizeFirstLetter(message.match(/message\s+(\w+)/)?.[1] || 'Unknown');
-    
-    // Updated regex to capture both repeated and non-repeated fields
-    const fieldMatches = [...message.matchAll(/^\s*(repeated\s+)?(\w+)\s+(\w+)\s*=\s*\d+;/gm)];
-    
+
+    // Updated regex to match both repeated and non-repeated fields
+    const fieldMatches = [...message.matchAll(/^\s*(repeated\s+)?([\w.]+)\s+(\w+)\s*=\s*\d+;/gm)];
+
     const fields = fieldMatches.map(match => {
         const isRepeated = match[1] !== undefined;  // Check if 'repeated' is captured
         const fieldType = match[2];
         const fieldName = match[3];
-        
+
+        // Strip package path from field type for repeated fields (e.g., pjResponse.ListadoContactoEmpresa -> ListadoContactoEmpresa)
+        const simplifiedFieldType = fieldType.includes('.') ? fieldType.split('.').pop() : fieldType;
+
         if (isRepeated) {
-            return `private List<${convertProtoTypeToJava(fieldType)}> ${fieldName};`;
+            return `private List<${convertProtoTypeToJava(simplifiedFieldType!)}> ${fieldName};`;
         } else {
-            return `private ${convertProtoTypeToJava(fieldType)} ${fieldName};`;
+            return `private ${convertProtoTypeToJava(simplifiedFieldType!)} ${fieldName};`;
         }
     });
 
@@ -88,7 +91,6 @@ public class ${className} {
 }
 `;
 };
-
 
 // Function to convert proto types to Java types (this is basic, expand as needed)
 const convertProtoTypeToJava = (protoType: string): string => {
