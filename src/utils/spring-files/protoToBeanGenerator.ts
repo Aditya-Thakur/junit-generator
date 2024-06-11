@@ -20,7 +20,6 @@ const parseProtoFile = (filePath: string) => {
     const content = fs.readFileSync(filePath, 'utf-8');
     const packageMatch = content.match(/package\s+([\w.]+);/);
     const javaPackageMatch = content.match(/option\s+java_package\s*=\s*"([\w.]+)";/);
-    // Capture both regular and repeated fields
     const messageMatch = content.match(/message\s+\w+\s*{[^}]*}/g);
     const importMatches = [...content.matchAll(/import\s+"([\w/.]+)";/g)];
 
@@ -40,15 +39,15 @@ const capitalizeFirstLetter = (str: string): string => {
 // Function to convert proto message to Java bean class
 const generateJavaClass = (javaPackage: string, message: string, imports: string[], packageName: string): string => {
     const className = capitalizeFirstLetter(message.match(/message\s+(\w+)/)?.[1] || 'Unknown');
-
-    // Match both regular and repeated fields
-    const fieldMatches = [...message.matchAll(/(repeated\s+)?(\w+)\s+(\w+)\s*=\s*\d+;/g)];
-
+    
+    // Updated regex to capture both repeated and non-repeated fields
+    const fieldMatches = [...message.matchAll(/^\s*(repeated\s+)?(\w+)\s+(\w+)\s*=\s*\d+;/gm)];
+    
     const fields = fieldMatches.map(match => {
-        const isRepeated = match[1] !== undefined;
+        const isRepeated = match[1] !== undefined;  // Check if 'repeated' is captured
         const fieldType = match[2];
         const fieldName = match[3];
-
+        
         if (isRepeated) {
             return `private List<${convertProtoTypeToJava(fieldType)}> ${fieldName};`;
         } else {
@@ -89,6 +88,7 @@ public class ${className} {
 }
 `;
 };
+
 
 // Function to convert proto types to Java types (this is basic, expand as needed)
 const convertProtoTypeToJava = (protoType: string): string => {
