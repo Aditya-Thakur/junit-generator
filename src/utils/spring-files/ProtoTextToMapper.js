@@ -15,7 +15,10 @@ function convertProtoFileToMappings(protoFile) {
             const [ , , varName] = match;
 
             // Convert the variable name from snake_case to camelCase
-            const camelCaseName = varName.replace(/(_\w)/g, match => match[1].toUpperCase());
+            let camelCaseName = varName.replace(/(_\w)/g, match => match[1].toUpperCase());
+
+            // Ensure the first character is lowercase
+            camelCaseName = camelCaseName.charAt(0).toLowerCase() + camelCaseName.slice(1);
 
             // Construct the mapping string
             const mapping = `@Mapping(source = "${camelCaseName}", target = "${varName}")`;
