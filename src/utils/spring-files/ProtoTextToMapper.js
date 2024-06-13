@@ -12,16 +12,21 @@ function convertProtoFileToMappings(protoFile) {
         const match = declaration.match(regex);
 
         if (match) {
-            const [ , , varName] = match;
+            const [, , varName] = match;
 
-            // Convert the variable name from snake_case to camelCase
+            // Convert the variable name from snake_case to camelCase with special rules
             let camelCaseName = varName.replace(/(_\w)/g, match => match[1].toUpperCase());
+            // Ensure letters after digits are capitalized
+            camelCaseName = camelCaseName.replace(/(\d)(\w)/g, (match, digit, letter) => digit + letter.toUpperCase());
 
-            // Ensure the first character is lowercase
+            // Ensure the first character of the source name is lowercase
             camelCaseName = camelCaseName.charAt(0).toLowerCase() + camelCaseName.slice(1);
 
+            // Ensure the first character of the target name is lowercase
+            const targetName = varName.charAt(0).toLowerCase() + varName.slice(1);
+
             // Construct the mapping string
-            const mapping = `@Mapping(source = "${camelCaseName}", target = "${varName}")`;
+            const mapping = `@Mapping(source = "${camelCaseName}", target = "${targetName}")`;
 
             // Add the mapping to the array
             mappings.push(mapping);
@@ -36,7 +41,6 @@ function convertProtoFileToMappings(protoFile) {
 
 // Example usage:
 const protoFile = `
-string R04_deu_dir_vig = 2; 
 `;
 
 const mappings = convertProtoFileToMappings(protoFile);
