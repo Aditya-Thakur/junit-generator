@@ -4,7 +4,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface SaclieRepository extends JpaRepository<Saclie, Long> {
-    
+
     @Query(value = "WITH parametros AS ( "
                  + "SELECT DISTINCT parametro "
                  + "FROM tu_chile.tucl_online_chilecore_dbs.sauspf "
@@ -23,16 +23,16 @@ public interface SaclieRepository extends JpaRepository<Saclie, Long> {
                  + "WHERE rut_cli IN (SELECT rut FROM ruts) "
                  + "AND dv_cli IN (SELECT rut_dv FROM ruts)), "
                  + "nom_emp_counts AS ( "
-                 + "SELECT ne.nom_emp, COUNT(DISTINCT sp.parametro) AS param_count "
+                 + "SELECT ne.nom_emp AS clientName, ne.rut_cli AS rut, ne.dv_cli AS dv, COUNT(DISTINCT p.parametro) AS param_count "
                  + "FROM nom_emp_list ne "
                  + "JOIN tu_chile.tucl_online_chilecore_dbs.sausua su ON ne.rut_cli = su.rut "
                  + "AND ne.dv_cli = su.rut_dv "
                  + "JOIN tu_chile.tucl_online_chilecore_dbs.sauspf sp ON su.perfil = sp.perfil "
                  + "WHERE sp.parametro IN (SELECT parametro FROM parametros) "
-                 + "GROUP BY ne.nom_emp) "
-                 + "SELECT nom_emp "
+                 + "GROUP BY ne.nom_emp, ne.rut_cli, ne.dv_cli) "
+                 + "SELECT clientName, rut, dv "
                  + "FROM nom_emp_counts "
                  + "WHERE param_count = (SELECT COUNT(DISTINCT parametro) FROM parametros)", 
            nativeQuery = true)
-    List<String> findNomEmpByParametros(@Param("paramList") List<String> paramList);
+    List<Object[]> findClientDetailsByParametros(@Param("paramList") List<String> paramList);
 }
