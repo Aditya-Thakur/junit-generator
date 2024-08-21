@@ -36,3 +36,17 @@ public interface SaclieRepository extends JpaRepository<Saclie, Long> {
            nativeQuery = true)
     List<Object[]> findClientDetailsByParametros(@Param("paramList") List<String> paramList);
 }
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+public interface SaclieRepository extends JpaRepository<Saclie, Long> {
+
+    @Query(value = "SELECT s.rut_cli, s.dv_cli " +
+                   "FROM tu_chile.tucl_online_chilecore_dbs.saclie s " +
+                   "JOIN tu_chile.tucl_online_chilecore_dbs.sausua u ON s.rut_cli = u.rut AND s.dv_cli = u.rut_dv " +
+                   "WHERE u.user_name = :userName AND u.user_email = :userEmail", 
+           nativeQuery = true)
+    Object[] findClientRutDvByUserDetails(@Param("userName") String userName, @Param("userEmail") String userEmail);
+}
