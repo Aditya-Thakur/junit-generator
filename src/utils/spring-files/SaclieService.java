@@ -1,5 +1,6 @@
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -18,5 +19,12 @@ public class SaclieService {
                               (String) result[0]  // clientName
                       ))
                       .collect(Collectors.toList());
+    }
+
+    public List<ClientDetailsDTO> getFilteredClientDetailsByParametros(List<String> paramList, String filter) {
+        List<ClientDetailsDTO> clientDetails = getClientDetailsByParametros(paramList);
+        return clientDetails.stream()
+                            .filter(client -> client.getClientName().toLowerCase().contains(filter.toLowerCase()))
+                            .collect(Collectors.toList());
     }
 }

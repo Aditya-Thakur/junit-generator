@@ -14,4 +14,9 @@ public class SaclieController {
     public List<ClientDetailsDTO> getClientDetailsByParametros(@RequestBody List<String> paramList) {
         return saclieService.getClientDetailsByParametros(paramList);
     }
+
+    @PostMapping("/filtered")
+    public List<ClientDetailsDTO> getFilteredClientDetailsByParametros(@RequestBody FilterRequest filterRequest) {
+        return saclieService.getFilteredClientDetailsByParametros(filterRequest.getParamList(), filterRequest.getFilter());
+    }
 }
