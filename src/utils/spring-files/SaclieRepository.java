@@ -23,7 +23,7 @@ public interface SaclieRepository extends JpaRepository<Saclie, Long> {
                  + "WHERE rut_cli IN (SELECT rut FROM ruts) "
                  + "AND dv_cli IN (SELECT rut_dv FROM ruts)), "
                  + "nom_emp_counts AS ( "
-                 + "SELECT ne.nom_emp AS clientName, ne.rut_cli AS rut, ne.dv_cli AS dv, COUNT(DISTINCT p.parametro) AS param_count "
+                 + "SELECT ne.nom_emp AS clientName, ne.rut_cli AS rut, ne.dv_cli AS dv, COUNT(DISTINCT sp.parametro) AS param_count "
                  + "FROM nom_emp_list ne "
                  + "JOIN tu_chile.tucl_online_chilecore_dbs.sausua su ON ne.rut_cli = su.rut "
                  + "AND ne.dv_cli = su.rut_dv "
