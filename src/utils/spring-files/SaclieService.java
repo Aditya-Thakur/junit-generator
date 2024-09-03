@@ -48,3 +48,15 @@ public class SaclieService {
     }
 }
 
+
+public interface SaclieRepository extends JpaRepository<Saclie, Long> {
+
+    @Query(value = "SELECT rut_cli, dv_cli, nom_emp FROM tu_chile.tucl_online_chilecore_dbs.saclie", nativeQuery = true)
+    List<Object[]> findAllClientDetails();
+}
+
+public interface SaclieRepository extends JpaRepository<Saclie, Long> {
+
+    @Query(value = "SELECT rut_cli, dv_cli, nom_emp FROM tu_chile.tucl_online_chilecore_dbs.saclie WHERE rut_cli = :rut", nativeQuery = true)
+    Object[] findClientDetailsByRut(@Param("rut") String rut);
+}
