@@ -6,11 +6,13 @@ set DEV_HOST=localhost
 set QA_HOST=localhost
 set DEV_PORT=5436
 set QA_PORT=5437
-set DB_USER=your_db_user   :: Replace with your PostgreSQL username
-set DB_PASSWORD=your_db_password   :: Replace with your PostgreSQL password
+set DEV_USER=dev_user   :: Replace with your dev database username
+set DEV_PASSWORD=dev_password   :: Replace with your dev database password
+set QA_USER=qa_user     :: Replace with your qa database username
+set QA_PASSWORD=qa_password     :: Replace with your qa database password
 
-:: Export password to avoid entering it each time (For Windows, it depends on the PostgreSQL configuration)
-set PGPASSWORD=%DB_PASSWORD%
+:: Export dev password for psql command to avoid prompt
+set PGPASSWORD=%DEV_PASSWORD%
 
 :: Table to be copied
 set TABLE=sausua
@@ -20,17 +22,17 @@ set SCHEMA=tucl_online_chilecore_dbs
 
 echo Copying top 50 rows from table: %TABLE%
 
-:: Step 1: Dump top 50 rows from the dev database for the sausua table
-pg_dump -h %DEV_HOST% -p %DEV_PORT% -U %DB_USER% -d %DEV_DB% -t "%SCHEMA%.%TABLE%" --data-only --column-inserts --rows-per-insert=50 -f %TABLE%_data.sql
+:: Step 1: Export top 50 rows from the dev database's sausua table to a CSV file
+psql -h %DEV_HOST% -p %DEV_PORT% -U %DEV_USER% -d %DEV_DB% -c "\COPY (SELECT * FROM \"%SCHEMA%\".\"%TABLE%\" LIMIT 50) TO '%TABLE%_top50.csv' CSV HEADER;"
 
-:: Add a LIMIT clause to only select the top 50 rows
-psql -h %DEV_HOST% -p %DEV_PORT% -U %DB_USER% -d %DEV_DB% -c "COPY (SELECT * FROM \"%SCHEMA%\".\"%TABLE%\" LIMIT 50) TO STDOUT WITH CSV HEADER" > %TABLE%_top50.csv
+:: Update to use QA password for the next steps
+set PGPASSWORD=%QA_PASSWORD%
 
 :: Step 2: Truncate the corresponding table in the qa database
-psql -h %QA_HOST% -p %QA_PORT% -U %DB_USER% -d %QA_DB% -c "TRUNCATE TABLE \"%SCHEMA%\".\"%TABLE%\";"
+psql -h %QA_HOST% -p %QA_PORT% -U %QA_USER% -d %QA_DB% -c "TRUNCATE TABLE \"%SCHEMA%\".\"%TABLE%\";"
 
-:: Step 3: Restore the top 50 rows into the qa database
-psql -h %QA_HOST% -p %QA_PORT% -U %DB_USER% -d %QA_DB% -c "\copy \"%SCHEMA%\".\"%TABLE%\" FROM '%TABLE%_top50.csv' CSV HEADER;"
+:: Step 3: Import the top 50 rows into the qa database
+psql -h %QA_HOST% -p %QA_PORT% -U %QA_USER% -d %QA_DB% -c "\COPY \"%SCHEMA%\".\"%TABLE%\" FROM '%TABLE%_top50.csv' CSV HEADER;"
 
 :: Clean up the dumped CSV file
 del %TABLE%_top50.csv
